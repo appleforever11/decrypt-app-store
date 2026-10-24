@@ -37,3 +37,7 @@ No raw subprocess output is persisted or displayed. Failures show bounded, actio
 `python3 -m unittest discover -s tests -v` exercises the validator, including mixed encrypted/clear fat slices and malformed inputs. `python3 macos/Resources/audit.py OUTPUT.ipa --reference ORIGINAL.ipa` runs the same independent audit used by the app.
 
 The DMG is a local development artifact, ad-hoc signed and not notarized. It requires the external tools configured above. No binaries or user packages should be attached to a public pull request.
+
+## Branded installer
+
+Version 0.1.1 includes the glass app icon and a Finder drag-to-Applications layout. See [branding and packaging instructions](../docs/BRANDING.md) for reproducible assets and disk image generation. The DMG does not contain credentials, an account session, or user archives.
