@@ -1,24 +1,34 @@
 import SwiftUI
 
-struct ActivityView: View {
+struct DownloadsView: View {
     @Bindable var store: Store
-    let library: Bool
     @State private var report: Job?
-    var displayed: [Job] { library ? store.completed : store.jobs }
+    @State private var confirmingClear = false
+    var displayed: [Job] { store.jobs }
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Your downloads").font(.title2.bold())
+                    Text("\(store.jobs.filter { !$0.finished }.count) active · \(store.jobs.filter(\.finished).count) finished").font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { confirmingClear = true } label: { Label("Clear All Downloads", systemImage: "trash") }.buttonStyle(.glass).disabled(store.jobs.isEmpty)
+            }.padding(24)
             if displayed.isEmpty {
-                ContentUnavailableView(library ? "Your local library" : "Ready when you are", systemImage: library ? "square.stack.3d.up" : "arrow.down.circle", description: Text(library ? "Downloaded packages and validated archives appear here." : "Downloads and local decryption jobs appear here."))
+                ContentUnavailableView("No downloads yet", systemImage: "arrow.down.circle", description: Text("Active downloads, completed packages and local IPA jobs appear here."))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         ForEach(displayed) { job in
                             VStack(alignment: .leading, spacing: 14) {
                                 HStack(alignment: .top, spacing: 16) {
-                                    Image(systemName: symbol(job)).font(.title2).foregroundStyle(color(job)).frame(width: 34)
+                                    AppArtwork(url: job.iconURL, size: 52)
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(job.title).font(.headline)
                                         Text(job.platform).font(.caption).foregroundStyle(.secondary)
+                                        Text("Version \(job.appVersion ?? job.audit?.version ?? (job.finished ? "Unavailable" : "Pending")) · Build \(job.buildNumber ?? job.audit?.buildNumber ?? (job.finished ? "Unavailable" : "Pending"))").font(.caption).foregroundStyle(.secondary)
+                                        if let external = job.externalVersionID { Text("Store ID \(external)").font(.caption2).foregroundStyle(.tertiary) }
                                     }
                                     Spacer()
                                     Text(job.status).font(.subheadline.weight(.medium)).foregroundStyle(color(job))
@@ -39,7 +49,15 @@ struct ActivityView: View {
                     }.padding(24)
                 }
             }
-        }.sheet(item: $report) { job in
+        }
+        .task { await store.hydrateDownloads() }
+        .confirmationDialog("Clear all downloads?", isPresented: $confirmingClear) {
+            Button("Clear All Downloads", role: .destructive) { store.clearDownloads() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Active and queued jobs will be cancelled and download history will be cleared. Downloaded files stay on your Mac.")
+        }
+        .sheet(item: $report) { job in
             VStack(alignment: .leading, spacing: 16) {
                 Text("Archive validation").font(.title.bold())
                 if let audit = job.audit {
@@ -57,6 +75,5 @@ struct ActivityView: View {
             }.padding(24).frame(width: 820, height: 520)
         }
     }
-    private func symbol(_ job: Job) -> String { job.status == "Validated" ? "checkmark.seal" : job.status == "Partial" ? "exclamationmark.shield" : job.status == "Failed" ? "xmark.circle" : "shippingbox" }
     private func color(_ job: Job) -> Color { job.status == "Validated" ? .green : job.status == "Partial" ? .orange : job.status == "Failed" ? .red : .accentColor }
 }

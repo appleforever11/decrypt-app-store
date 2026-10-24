@@ -25,6 +25,7 @@ struct Slice: Codable, Identifiable {
 }
 struct Audit: Codable {
     var appName: String? = nil
+    var buildNumber: String? = nil
     var platform: String? = nil
     let bundleID: String
     let version: String
@@ -41,6 +42,12 @@ struct Job: Identifiable, Codable {
     var platform: String
     var status: String = "Queued"
     var detail: String = "Waiting to start"
+    var appID: Int? = nil
+    var bundleID: String? = nil
+    var appVersion: String? = nil
+    var buildNumber: String? = nil
+    var externalVersionID: String? = nil
+    var iconURL: URL? = nil
     var source: String?
     var output: String?
     var audit: Audit?
@@ -87,6 +94,7 @@ struct LookupResponse: Decodable {
         let version: String
         let price: Double?
         let artworkUrl512: URL?
+        let artworkUrl100: URL?
         var app: StoreApp { StoreApp(id: trackId, bundleID: bundleId, name: trackName, version: version, price: price ?? 0, platforms: nil) }
     }
     let results: [Item]

@@ -7,7 +7,7 @@ struct ContentView: View {
             List(selection: $store.section) {
                 Section("Workspace") {
                     Label("Discover", systemImage: "square.grid.2x2").tag("Discover")
-                    Label("Activity", systemImage: "arrow.down.circle").badge(store.jobs.filter { !$0.finished }.count).tag("Activity")
+                    Label("Downloads", systemImage: "arrow.down.circle").badge(store.jobs.filter { !$0.finished }.count).tag("Downloads")
                     Label("Library", systemImage: "square.stack.3d.up").tag("Library")
                 }
                 Section("About") { Label("Capabilities", systemImage: "checkmark.shield").tag("Capabilities") }
@@ -21,8 +21,8 @@ struct ContentView: View {
         } detail: {
             Group {
                 switch store.section {
-                case "Activity": ActivityView(store: store, library: false)
-                case "Library": ActivityView(store: store, library: true)
+                case "Downloads": DownloadsView(store: store)
+                case "Library": LibraryView(store: store)
                 case "Capabilities": CapabilitiesView()
                 default: DiscoverView(store: store)
                 }

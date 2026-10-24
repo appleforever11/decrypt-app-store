@@ -22,6 +22,9 @@ import UniformTypeIdentifiers
     var searching = false
     var loadingVersions = false
     var message: String?
+    var libraryItems: [LibraryItem] = []
+    var loadingLibrary = false
+    private var hydratingDownloads = false
     var section = "Discover"
     private var queue: [(UUID, () async -> Void)] = []
     private var worker: Task<Void, Never>?
@@ -33,11 +36,12 @@ import UniformTypeIdentifiers
     private var versionGeneration = UUID()
     private let storage: URL
     var selected: StoreApp? { apps.first { $0.id == selection } }
-    var completed: [Job] { jobs.filter { $0.finished && $0.output != nil } }
-    init() {
-        storage = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DecryptStore")
+    init(storageURL: URL? = nil) {
+        storage = storageURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DecryptStore")
         settings = (try? Data(contentsOf: storage.appendingPathComponent("settings.json"))).flatMap { try? JSONDecoder().decode(Settings.self, from: $0) } ?? Settings()
         jobs = (try? Data(contentsOf: storage.appendingPathComponent("library.json"))).flatMap { try? JSONDecoder().decode([Job].self, from: $0) } ?? []
+        libraryItems = (try? Data(contentsOf: storage.appendingPathComponent("library-items.json"))).flatMap { try? JSONDecoder().decode([LibraryItem].self, from: $0) } ?? []
+        for job in jobs { rememberDecryptedJob(job) }
         for i in jobs.indices where !jobs[i].finished { jobs[i].status = "Interrupted"; jobs[i].detail = "App closed before completion. Original files preserved."; jobs[i].finished = true }
     }
     private func prepareStorage() {
@@ -50,6 +54,81 @@ import UniformTypeIdentifiers
     private func saveJobs() {
         prepareStorage()
         if let data = try? JSONEncoder().encode(jobs) { try? data.write(to: storage.appendingPathComponent("library.json"), options: .atomic) }
+    }
+    private func saveLibrary() {
+        prepareStorage()
+        if let data = try? JSONEncoder().encode(libraryItems) { try? data.write(to: storage.appendingPathComponent("library-items.json"), options: .atomic) }
+    }
+    private func rememberDecryptedJob(_ job: Job) {
+        guard job.finished, job.status == "Validated", let audit = job.audit, audit.encrypted == 0,
+              let path = job.output, FileManager.default.fileExists(atPath: path) else { return }
+        let item = LibraryItem(id: job.id, title: audit.appName ?? job.title, bundleID: audit.bundleID, version: audit.version, build: job.buildNumber ?? audit.buildNumber, platform: audit.platform ?? job.platform, output: path, iconURL: job.iconURL)
+        if let index = libraryItems.firstIndex(where: { $0.id == item.id }) {
+            var updated = item
+            updated.iconURL = item.iconURL ?? libraryItems[index].iconURL
+            updated.build = item.build ?? libraryItems[index].build
+            guard libraryItems[index] != updated else { return }
+            libraryItems[index] = updated
+        } else { libraryItems.insert(item, at: 0) }
+        saveLibrary()
+    }
+    func refreshLibrary() async {
+        guard !loadingLibrary else { return }
+        loadingLibrary = true
+        defer { loadingLibrary = false }
+        let root = URL(fileURLWithPath: settings.output)
+        let recovered = await Task.detached(priority: .utility) { LibraryDiscovery.recover(from: root) }.value
+        for item in recovered where !libraryItems.contains(where: { $0.id == item.id }) { libraryItems.append(item) }
+        saveLibrary()
+        for item in libraryItems where item.build == nil || item.platform == "IPA" {
+            guard !Task.isCancelled else { return }
+            let original = URL(fileURLWithPath: item.output).deletingLastPathComponent().appendingPathComponent("original.ipa").path
+            if let metadata = await packageMetadata(paths: [item.output, original]), metadata.bundleID == item.bundleID, metadata.version == item.version,
+               let index = libraryItems.firstIndex(where: { $0.id == item.id }) {
+                libraryItems[index].title = metadata.appName; libraryItems[index].build = metadata.buildNumber; libraryItems[index].platform = metadata.platform
+            }
+        }
+        saveLibrary()
+        for item in libraryItems where item.iconURL == nil {
+            guard !Task.isCancelled else { return }
+            if let details = await DownloadArtworkService.lookup(appID: nil, bundleID: item.bundleID),
+               let index = libraryItems.firstIndex(where: { $0.id == item.id }) {
+                libraryItems[index].iconURL = details.artworkUrl512 ?? details.artworkUrl100
+                if libraryItems[index].title == item.bundleID { libraryItems[index].title = details.trackName }
+            }
+            saveLibrary()
+        }
+    }
+    private func packageMetadata(paths: [String]) async -> PackageMetadata? {
+        guard let script = Bundle.main.url(forResource: "audit", withExtension: "py") else { return nil }
+        for path in paths where path.lowercased().hasSuffix(".ipa") && FileManager.default.fileExists(atPath: path) {
+            if let data = try? await CommandRunner().run(settings.python, [script.path, path, "--metadata-only"]),
+               let metadata = try? CommandRunner.decode(PackageMetadata.self, from: data) { return metadata }
+        }
+        return nil
+    }
+    func clearDownloads() {
+        queue.removeAll()
+        runner?.cancel()
+        jobs.removeAll()
+        saveJobs()
+    }
+    func hydrateDownloads() async {
+        guard !hydratingDownloads else { return }
+        hydratingDownloads = true
+        defer { hydratingDownloads = false }
+        for job in jobs where job.finished && job.buildNumber == nil {
+            guard !Task.isCancelled else { return }
+            if let metadata = await packageMetadata(paths: [job.output, job.source].compactMap { $0 }) {
+                mutate(job.id) { $0.bundleID = metadata.bundleID; $0.appVersion = metadata.version; $0.buildNumber = metadata.buildNumber; $0.title = metadata.appName }
+            }
+        }
+        for job in jobs where job.iconURL == nil {
+            guard !Task.isCancelled else { return }
+            if let details = await DownloadArtworkService.lookup(appID: job.appID, bundleID: job.bundleID ?? job.audit?.bundleID) {
+                mutate(job.id) { $0.iconURL = details.artworkUrl512 ?? details.artworkUrl100 }
+            }
+        }
     }
     func loadChart() async {
         guard !chartLoading else { return }
@@ -147,14 +226,14 @@ import UniformTypeIdentifiers
         if panel.runModal() == .OK, let url = panel.url { enqueueLocal(url) }
     }
     private func mutate(_ id: UUID, _ action: (inout Job) -> Void) {
-        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }; action(&jobs[index]); saveJobs()
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }; action(&jobs[index]); rememberDecryptedJob(jobs[index]); saveJobs()
     }
     func cancel(_ id: UUID) {
         if activeID == id { runner?.cancel() }
         else { queue.removeAll { $0.0 == id }; mutate(id) { $0.status = "Cancelled"; $0.finished = true; $0.detail = "Removed from queue" } }
     }
     private func schedule(_ job: Job, operation: @escaping () async -> Void) {
-        jobs.insert(job, at: 0); queue.append((job.id, operation)); section = "Activity"; saveJobs()
+        jobs.insert(job, at: 0); Task { await self.hydrateDownloads() }; queue.append((job.id, operation)); section = "Downloads"; saveJobs()
         guard worker == nil else { return }
         worker = Task {
             while !queue.isEmpty {
@@ -172,7 +251,8 @@ import UniformTypeIdentifiers
     func download() {
         guard let app = selected else { return }
         let config = settings, target = platform, external = version
-        let job = Job(title: app.name, platform: target.title)
+        let displayVersion = external.isEmpty ? app.version : versions.first(where: { $0.id == external })?.displayVersion
+        let job = Job(title: app.name, platform: target.title, appID: app.id, bundleID: app.bundleID, appVersion: displayVersion, externalVersionID: external.isEmpty ? nil : external, iconURL: artwork[app.id])
         schedule(job) { [self] in
             do {
                 let folder = try directory(config, id: job.id)
@@ -199,6 +279,12 @@ import UniformTypeIdentifiers
         }
     }
     private func decrypt(_ input: URL, folder: URL, config: Settings, id: UUID, tool: CommandRunner, platform: String? = nil) async throws {
+        if let script = Bundle.main.url(forResource: "audit", withExtension: "py"),
+           let data = try? await tool.run(config.python, [script.path, input.path, "--metadata-only"]),
+           let metadata = try? CommandRunner.decode(PackageMetadata.self, from: data) {
+            mutate(id) { $0.title = metadata.appName; $0.bundleID = metadata.bundleID; $0.appVersion = metadata.version; $0.buildNumber = metadata.buildNumber }
+            Task { await self.hydrateDownloads() }
+        }
         let credential = try FileManager.default.attributesOfItem(atPath: config.credential)
         guard (credential[.size] as? NSNumber)?.intValue == 16 else { throw CommandError.setup("Choose the matching 16-byte binary credential in Settings.") }
         guard (credential[.posixPermissions] as? NSNumber)?.intValue == 0o600 else { throw CommandError.setup("Credential file permissions must be 0600. Update them locally before continuing.") }
@@ -222,7 +308,7 @@ import UniformTypeIdentifiers
         let audit = try CommandRunner.decode(Audit.self, from: data)
         try data.write(to: folder.appendingPathComponent("validation.json"), options: .atomic)
         let namedOutput = try ArchiveFilename.finalize(output, audit: audit, platform: platform)
-        mutate(id) { $0.output = namedOutput.path; $0.audit = audit; $0.status = audit.encrypted == 0 ? "Validated" : "Partial"; $0.detail = audit.summary; $0.finished = true; $0.progress = 1 }
+        mutate(id) { $0.output = namedOutput.path; $0.audit = audit; $0.appVersion = audit.version; $0.buildNumber = audit.buildNumber; $0.bundleID = audit.bundleID; $0.status = audit.encrypted == 0 ? "Validated" : "Partial"; $0.detail = audit.summary; $0.finished = true; $0.progress = 1 }
     }
     private func fail(_ id: UUID, _ error: Error) {
         mutate(id) { $0.status = error is CancellationError ? "Cancelled" : "Failed"; $0.detail = error is CancellationError ? "Stopped. Original files preserved." : error.localizedDescription; $0.finished = true; $0.progress = nil }

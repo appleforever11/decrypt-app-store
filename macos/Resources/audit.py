@@ -55,17 +55,23 @@ def identity(archive):
     if executable not in archive.namelist(): raise ValueError('missing main executable')
     return (info['CFBundleIdentifier'], str(info.get('CFBundleShortVersionString', '')), str(info.get('CFBundleVersion', '')), executable)
 
+def metadata(archive):
+    ident = identity(archive)
+    info = plistlib.loads(archive.read(ident[3].rsplit('/', 1)[0]+'/Info.plist'))
+    app_name = info.get('CFBundleDisplayName') or info.get('CFBundleName') or ident[3].rsplit('/', 1)[0].rsplit('/', 1)[-1].removesuffix('.app')
+    supported = info.get('CFBundleSupportedPlatforms') or []
+    raw_platform = str(info.get('DTPlatformName') or (supported[0] if supported else '')).lower()
+    platform = {'iphoneos': 'ios', 'ipados': 'ipad', 'watchos': 'watchos', 'xros': 'visionos', 'visionos': 'visionos', 'appletvos': 'appletv', 'macosx': 'macos'}.get(raw_platform, 'ios')
+    return dict(appName=str(app_name), bundleID=ident[0], version=ident[1], buildNumber=ident[2], platform=platform)
+
+
 def audit(path, reference=None):
     with ZipFile(path) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)): raise ValueError('duplicate ZIP members')
         if archive.testzip() is not None: raise ValueError('ZIP CRC failure')
         ident = identity(archive)
-        info = plistlib.loads(archive.read(ident[3].rsplit('/', 1)[0]+'/Info.plist'))
-        app_name = info.get('CFBundleDisplayName') or info.get('CFBundleName') or ident[3].rsplit('/', 1)[0].rsplit('/', 1)[-1].removesuffix('.app')
-        supported = info.get('CFBundleSupportedPlatforms') or []
-        raw_platform = str(info.get('DTPlatformName') or (supported[0] if supported else '')).lower()
-        platform = {'iphoneos': 'ios', 'ipados': 'ipad', 'watchos': 'watchos', 'xros': 'visionos', 'visionos': 'visionos', 'appletvos': 'appletv', 'macosx': 'macos'}.get(raw_platform, 'ios')
+        app_metadata = metadata(archive)
         result = []
         for entry in archive.infolist():
             if entry.is_dir(): continue
@@ -81,11 +87,16 @@ def audit(path, reference=None):
                 inventory_matches = sorted(names) == sorted(source.namelist())
                 identity_matches = ident == identity(source)
                 if not inventory_matches or not identity_matches: raise ValueError('output inventory or identity differs from original')
-        return dict(appName=str(app_name), platform=platform, bundleID=ident[0], version=ident[1], slices=result, crcValid=True,
+        return dict(**app_metadata, slices=result, crcValid=True,
                     inventoryMatches=inventory_matches, identityMatches=identity_matches)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive'); parser.add_argument('--reference')
+    parser.add_argument('--metadata-only', action='store_true', help='read app metadata without a full archive audit')
     args = parser.parse_args()
-    print(json.dumps(audit(args.archive, args.reference)))
+    if args.metadata_only:
+        with ZipFile(args.archive) as archive:
+            print(json.dumps(metadata(archive)))
+    else:
+        print(json.dumps(audit(args.archive, args.reference)))

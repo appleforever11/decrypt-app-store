@@ -17,6 +17,8 @@
 - **A proper Mac storefront.** Live Apple US top-free charts, real App Store artwork, native sidebars, and Liquid Glass controls.
 - **Across Apple platforms.** Search iPhone, iPad, Mac, Apple Watch, Apple Vision and Apple TV listings.
 - **Readable version history.** App version numbers by default, with optional external IDs and paged historical lookups.
+- **Your decrypted apps.** Library contains only apps successfully decrypted through this app, with icons, versions, builds and Finder reveal. Its catalog stays available when download history is cleared.
+- **A dedicated Downloads view.** Active and previous jobs have app icons and version/build details. Clear All Downloads cancels work and clears history while preserving files.
 - **A local workflow.** Queue owned downloads or import an IPA, see progress, cancel work, and reveal preserved originals and outputs in Finder.
 - **Validation that tells the whole story.** ZIP CRC, app identity, member inventory and every Mach-O slice are checked independently. Unsupported encrypted slices stay visibly marked **Partial**.
 - **Private by design.** Existing ipatool Keychain sign-in, a local credential path, argument-array process execution, and no automatic purchases.

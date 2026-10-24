@@ -35,6 +35,7 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(result['slices'][0]['cryptid'], 0)
             self.assertEqual(result['appName'], 'Example App')
             self.assertEqual(result['platform'], 'visionos')
+            self.assertEqual(result['buildNumber'], '1')
             with ZipFile(output, 'a') as z: z.writestr('extra', b'x')
             with self.assertRaises(ValueError): audit.audit(output, source)
     def test_encrypted_big_endian_32(self):
