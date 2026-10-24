@@ -24,6 +24,8 @@ struct Slice: Codable, Identifiable {
     let cryptid: Int
 }
 struct Audit: Codable {
+    var appName: String? = nil
+    var platform: String? = nil
     let bundleID: String
     let version: String
     let slices: [Slice]

@@ -185,7 +185,7 @@ import UniformTypeIdentifiers
                 guard FileManager.default.fileExists(atPath: input.path) else { throw CommandError.setup("Download returned without a package at the expected path.") }
                 if target == .macos {
                     mutate(job.id) { $0.output = input.path; $0.status = "Downloaded"; $0.detail = "Mac package preserved. PKG decryption is not supported."; $0.finished = true }
-                } else { try await decrypt(input, folder: folder, config: config, id: job.id, tool: tool) }
+                } else { try await decrypt(input, folder: folder, config: config, id: job.id, tool: tool, platform: target.rawValue) }
             } catch { fail(job.id, error) }
         }
     }
@@ -198,13 +198,13 @@ import UniformTypeIdentifiers
             } catch { fail(job.id, error) }
         }
     }
-    private func decrypt(_ input: URL, folder: URL, config: Settings, id: UUID, tool: CommandRunner) async throws {
+    private func decrypt(_ input: URL, folder: URL, config: Settings, id: UUID, tool: CommandRunner, platform: String? = nil) async throws {
         let credential = try FileManager.default.attributesOfItem(atPath: config.credential)
         guard (credential[.size] as? NSNumber)?.intValue == 16 else { throw CommandError.setup("Choose the matching 16-byte binary credential in Settings.") }
         guard (credential[.posixPermissions] as? NSNumber)?.intValue == 0o600 else { throw CommandError.setup("Credential file permissions must be 0600. Update them locally before continuing.") }
         let root = URL(fileURLWithPath: config.decryptor)
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("transform").path), FileManager.default.fileExists(atPath: root.appendingPathComponent("decrypt.py").path) else { throw CommandError.setup("Choose a built fairplay-decrypt folder in Settings.") }
-        let output = folder.appendingPathComponent("decrypted.ipa")
+        let output = folder.appendingPathComponent(".decrypting.ipa")
         mutate(id) { $0.status = "Decrypting"; $0.detail = "Processing supported arm64 binaries" }
         _ = try await tool.run(config.python, [root.appendingPathComponent("decrypt.py").path, input.path, output.path, "--credential", config.credential], directory: root.path) { text in
             // Expose only numeric progress; never raw subprocess output or credentials.
@@ -221,7 +221,8 @@ import UniformTypeIdentifiers
         let data = try await tool.run(config.python, [auditScript.path, output.path, "--reference", input.path])
         let audit = try CommandRunner.decode(Audit.self, from: data)
         try data.write(to: folder.appendingPathComponent("validation.json"), options: .atomic)
-        mutate(id) { $0.output = output.path; $0.audit = audit; $0.status = audit.encrypted == 0 ? "Validated" : "Partial"; $0.detail = audit.summary; $0.finished = true; $0.progress = 1 }
+        let namedOutput = try ArchiveFilename.finalize(output, audit: audit, platform: platform)
+        mutate(id) { $0.output = namedOutput.path; $0.audit = audit; $0.status = audit.encrypted == 0 ? "Validated" : "Partial"; $0.detail = audit.summary; $0.finished = true; $0.progress = 1 }
     }
     private func fail(_ id: UUID, _ error: Error) {
         mutate(id) { $0.status = error is CancellationError ? "Cancelled" : "Failed"; $0.detail = error is CancellationError ? "Stopped. Original files preserved." : error.localizedDescription; $0.finished = true; $0.progress = nil }

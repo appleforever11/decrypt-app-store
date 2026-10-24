@@ -29,9 +29,12 @@ class AuditTests(unittest.TestCase):
             source, output = Path(directory)/'original.ipa', Path(directory)/'clear.ipa'
             for path, cryptid in [(source, 1), (output, 0)]:
                 with ZipFile(path, 'w') as z:
-                    z.writestr('Payload/Test.app/Info.plist', plistlib.dumps(dict(CFBundleIdentifier='test.app', CFBundleExecutable='Test', CFBundleVersion='1')))
+                    z.writestr('Payload/Test.app/Info.plist', plistlib.dumps(dict(CFBundleIdentifier='test.app', CFBundleExecutable='Test', CFBundleVersion='1', CFBundleDisplayName='Example App', CFBundleSupportedPlatforms=['XROS'])))
                     z.writestr('Payload/Test.app/Test', thin(cryptid=cryptid))
-            self.assertEqual(audit.audit(output, source)['slices'][0]['cryptid'], 0)
+            result = audit.audit(output, source)
+            self.assertEqual(result['slices'][0]['cryptid'], 0)
+            self.assertEqual(result['appName'], 'Example App')
+            self.assertEqual(result['platform'], 'visionos')
             with ZipFile(output, 'a') as z: z.writestr('extra', b'x')
             with self.assertRaises(ValueError): audit.audit(output, source)
     def test_encrypted_big_endian_32(self):

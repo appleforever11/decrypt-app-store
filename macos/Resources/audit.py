@@ -61,6 +61,11 @@ def audit(path, reference=None):
         if len(names) != len(set(names)): raise ValueError('duplicate ZIP members')
         if archive.testzip() is not None: raise ValueError('ZIP CRC failure')
         ident = identity(archive)
+        info = plistlib.loads(archive.read(ident[3].rsplit('/', 1)[0]+'/Info.plist'))
+        app_name = info.get('CFBundleDisplayName') or info.get('CFBundleName') or ident[3].rsplit('/', 1)[0].rsplit('/', 1)[-1].removesuffix('.app')
+        supported = info.get('CFBundleSupportedPlatforms') or []
+        raw_platform = str(info.get('DTPlatformName') or (supported[0] if supported else '')).lower()
+        platform = {'iphoneos': 'ios', 'ipados': 'ipad', 'watchos': 'watchos', 'xros': 'visionos', 'visionos': 'visionos', 'appletvos': 'appletv', 'macosx': 'macos'}.get(raw_platform, 'ios')
         result = []
         for entry in archive.infolist():
             if entry.is_dir(): continue
@@ -76,7 +81,7 @@ def audit(path, reference=None):
                 inventory_matches = sorted(names) == sorted(source.namelist())
                 identity_matches = ident == identity(source)
                 if not inventory_matches or not identity_matches: raise ValueError('output inventory or identity differs from original')
-        return dict(bundleID=ident[0], version=ident[1], slices=result, crcValid=True,
+        return dict(appName=str(app_name), platform=platform, bundleID=ident[0], version=ident[1], slices=result, crcValid=True,
                     inventoryMatches=inventory_matches, identityMatches=identity_matches)
 
 if __name__ == '__main__':

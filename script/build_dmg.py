@@ -7,7 +7,7 @@ app = Path(sys.argv[2]).resolve()
 destination = Path(sys.argv[3]).resolve()
 if destination.exists():
     raise SystemExit('Destination exists; refusing to overwrite')
-dmgbuild.build_dmg(str(destination), 'Decrypt App Store 0.1.1', settings={
+dmgbuild.build_dmg(str(destination), 'Decrypt App Store 0.1.2', settings={
     'format': 'UDZO', 'filesystem': 'HFS+',
     'files': [str(app)], 'symlinks': {'Applications': '/Applications'},
     'background': str(root / 'macos/Resources/Branding/DMGBackground.png'),
