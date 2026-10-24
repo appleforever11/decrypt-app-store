@@ -13,10 +13,11 @@ struct DownloadsView: View {
                     Text("\(store.jobs.filter { !$0.finished }.count) active · \(store.jobs.filter(\.finished).count) finished").font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { confirmingClear = true } label: { Label("Clear All Downloads", systemImage: "trash") }.buttonStyle(.glass).disabled(store.jobs.isEmpty)
-            }.padding(24)
+                Button { confirmingClear = true } label: { Label("Clear All Downloads", systemImage: "trash") }.buttonStyle(.glass).fixedSize().disabled(store.jobs.isEmpty)
+            }.padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 16)
             if displayed.isEmpty {
                 ContentUnavailableView("No downloads yet", systemImage: "arrow.down.circle", description: Text("Active downloads, completed packages and local IPA jobs appear here."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 14) {
@@ -46,10 +47,11 @@ struct DownloadsView: View {
                                 }.buttonStyle(.bordered)
                             }.padding(20).background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 18))
                         }
-                    }.padding(24)
+                    }.padding(.horizontal, 24).padding(.bottom, 24)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await store.hydrateDownloads() }
         .confirmationDialog("Clear all downloads?", isPresented: $confirmingClear) {
             Button("Clear All Downloads", role: .destructive) { store.clearDownloads() }

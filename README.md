@@ -25,9 +25,9 @@
 
 ## Screenshots
 
-### Archive status and local activity
+### Downloads
 
-![Validated and partial archive results](docs/images/activity.jpg)
+![Downloads with a fixed header and correctly positioned empty state](docs/images/downloads.jpg)
 
 ### Drag to install
 
