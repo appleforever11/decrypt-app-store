@@ -37,3 +37,7 @@ path must not exist.
 
 The decryptor uses each IPA's SINF and SUPF records to derive page keys,
 decrypt its encrypted arm64 pages, and clear `cryptid`.
+
+## Native macOS app
+
+See [Decrypt App Store for macOS](macos/README.md) for the SwiftUI storefront, setup, supported formats, build instructions and validation workflow.

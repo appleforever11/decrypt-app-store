@@ -30,3 +30,11 @@ device-ecid*
 *.p12
 *.key
 *.log
+
+# Local app artifacts and unrelated nested checkout
+macos/.build/
+dist/
+work/
+outputs/
+fairplay-decrypt-fork/
+*.dmg
